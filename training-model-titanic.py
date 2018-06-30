@@ -6,93 +6,104 @@ from keras.models import Sequential
 from keras.layers import Dense
 import math
 
-df = pd.read_csv('../datasets/train.csv')
-df = df.drop(df.columns[[3, 8]], axis=1)
+def clean(df):
+    df = df.drop(['Name', 'Ticket'], axis=1)
 
-l=[]
+    l=[]
 
-#converting column with genders to 0 and 1
+    #converting column with genders to 0 and 1
 
-s = "female"
-df.Sex = df.Sex == s
-df.Sex = df.Sex.astype(int)
+    s = "female"
+    df.Sex = df.Sex == s
+    df.Sex = df.Sex.astype(int)
 
-# filling NaNs of the Age column
+    # filling NaNs of the Age column
 
-age = int(df.Age.mean())
-std = int(df.Age.std())
-lo = int(age - std)
-hi = int(age + std)
+    age = int(df.Age.mean())
+    std = int(df.Age.std())
+    lo = int(age - std)
+    hi = int(age + std)
 
-c = len(df.Age)
+    c = len(df.Age)
 
-for i in range(c):
+    for i in range(c):
+
+        if np.isnan(df.Age[i]) == True:
+
+            l.append(random.randint(lo,hi))
+
+        else:
+            l.append(df.Age[i])
+
+    df.Age = l
+
+    #converting embarked types into integers 0, 1 and 2
+
+    mapping = [('C','0'), ('S','1'), ('Q','2')]
+    for k,v in mapping:
+        df.Embarked = df.Embarked.replace(k,v)
+
+    #converting cabin types into integers
     
-    if np.isnan(df.Age[i]) == True:
-        
-        l.append(random.randint(lo,hi))
+    temp_data = np.array(df.Cabin)
+
+    c = len(df) 
+    b = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'T']
+    d = len(b)
+
+    for i in range(c):
+        a = temp_data[i] != temp_data[i] #checking for nan values
+        if a == True:
+            e = 0
+            e = str(e)
+            temp_data[i] = e
+        else:
+            for j in range(d):
+                if b[j] in temp_data[i]:
+                    e = j + 1
+                    e = str(e)
+                    temp_data[i] = e
+
+    #saving result to a DataFrame  
+
+    df.Cabin = temp_data[:]
     
-    else:
-        l.append(df.Age[i])
-        
-df.Age = l
+    # dealing with NaN
 
-#converting embarked types into integers 0, 1 and 2
+    temp = df.Fare.tolist()
+    for i in range(len(df)):
+        if temp[i] != temp[i]:
+            temp[i] = 0
+    df.Fare = temp
 
-mapping = [('C','0'), ('S','1'), ('Q','2')]
-for k,v in mapping:
-    df.Embarked = df.Embarked.replace(k,v)
+    # rescaling Age and Fare columns from 0 to 1
     
-data = np.array(df)
+    temp_data = np.array(df.Age)
 
-#converting cabin types into integers
+    k = 1 / temp_data[:].max()
+    temp_data[:] = temp_data[:] * k
 
-c = len(df) 
-b = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'T']
-d = len(b)
+    df.Age = temp_data[:]
+    
+    temp_data = np.array(df.Fare)
 
-for i in range(c):
-    a = data[i, 8] != data[i, 8] #checking for nan values
-    if a == True:
-        e = 0
-        e = str(e)
-        data[i, 8] = e
-    else:
-        for j in range(d):
-            if b[j] in data[i, 8]:
-                e = j + 1
-                e = str(e)
-                data[i, 8] = e
-                
-#saving result to a DataFrame  
+    k = 1 / temp_data[:].max()
+    
+    temp_data[:] = temp_data[:] * k
 
-df.Cabin = data[:,8]
+    df.Fare = temp_data[:]
 
-# rescaling Age and Fare columns from 0 to 1
+    # converting to numpy
 
-k = 1 / data[:, 4].max()
-data[:, 4] = data[:, 4] * k
+    data = np.array(df)
 
-df.Age = data[:, 4]
+    return data
 
-k = 1 / data[:, 7].max()
-data[:, 7] = data[:, 7] * k
-
-df.Fare = data[:, 7]
-
-# dropping NaNs
-
-df = df.dropna()
-
-# converting to numpy
-
-data = np.array(df)
-
-def train(data, epochs):
+def train(train_data, epochs, test_data, val=.33):
     
     a = data.shape[1]-1
     dataY = data[:,1]
-    dataX = data[:,2:a]
+    dataX = data[:,2:]
     
     model = Sequential()
     model.add(Dense(20, input_dim = dataX.shape[1], activation='elu'))
@@ -101,6 +112,22 @@ def train(data, epochs):
     model.add(Dense(1, activation='sigmoid'))
     
     model.compile(loss='logcosh', optimizer='adam', metrics=['accuracy'])
-    model.fit(dataX, dataY, validation_split=.33, epochs=epochs, batch_size=32, verbose=2)
+    model.fit(dataX, dataY, validation_split=val, epochs=epochs, batch_size=32, verbose=2)
     
-train(data, 100)
+    preds = model.predict(test_data)
+    
+    return preds
+
+train_data = clean(pd.read_csv('../datasets/train.csv'))
+test_data = clean(pd.read_csv('../datasets/test.csv'))
+
+predictions = train(train_data, 50, test_data[:,1:], val=0)
+
+df = pd.DataFrame()
+df['PassengerId'] = pd.read_csv('../datasets/test.csv').PassengerId
+df['Survived'] = np.array(predictions)
+
+df.Survived = df.Survived >= .5
+df.Survived = df.Survived.astype(int)
+
+df.to_csv('titanic_submission.csv', index=False)
